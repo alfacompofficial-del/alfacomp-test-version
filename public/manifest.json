@@ -1,0 +1,20 @@
+{
+  "name": "AlfaComp — Электроника в Узбекистане",
+  "short_name": "AlfaComp",
+  "description": "ИБП Ion, мониторы, Wi-Fi роутеры, SSD, видеокарты в Ташкенте",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#1a1a2e",
+  "theme_color": "#1a1a2e",
+  "lang": "ru",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "512x512",
+      "type": "image/x-icon",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["shopping", "business"]
+}
