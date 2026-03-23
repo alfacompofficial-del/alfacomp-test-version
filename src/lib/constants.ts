@@ -19,6 +19,7 @@ export const CATEGORY_ICONS: Record<string, string> = {
   "Колонки": "🔊",
   "Кронштейны": "🖥️",
   "Deco": "🌐",
+  "Wi-Fi роутеры": "📶",
 };
 
 export const FAQ_DATA = [

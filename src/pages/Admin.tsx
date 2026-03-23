@@ -325,7 +325,7 @@ const Admin = () => {
                 onChange={(e) => setNewProduct({ ...newProduct, category: e.target.value })}
                 className="w-full bg-muted rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary"
               >
-                {["ИБП", "Мониторы", "Сеть", "Комплектующие", "Моноблоки", "Аксессуары", "Колонки", "Кронштейны", "Deco"].map((c) => (
+                {["ИБП", "Мониторы", "Сеть", "Комплектующие", "Моноблоки", "Аксессуары", "Колонки", "Кронштейны", "Deco", "Wi-Fi роутеры"].map((c) => (
                   <option key={c} value={c}>{c}</option>
                 ))}
               </select>
