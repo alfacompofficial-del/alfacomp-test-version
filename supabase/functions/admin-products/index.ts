@@ -12,9 +12,12 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { action, password, product, productId, price } = await req.json();
+    const body = await req.json();
+    console.log("Request body received:", JSON.stringify(body));
+    const { action, password, product, productId, price } = body;
 
-    if (password !== ADMIN_PASSWORD) {
+    if (password?.trim() !== ADMIN_PASSWORD) {
+      console.error("Auth failed. Received:", password, "Expected:", ADMIN_PASSWORD);
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
