@@ -12,7 +12,7 @@ const queryClient = new QueryClient();
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
-      <div className="fixed top-0 left-0 z-[9999] bg-red-600 text-white text-[10px] px-1 pointer-events-none">v1.0.2-hash</div>
+      <div className="fixed top-0 left-0 z-[9999] bg-red-600 text-white text-[10px] px-1 pointer-events-none">v1.0.3-error-fix</div>
       <Toaster />
       <Sonner />
       <HashRouter>
