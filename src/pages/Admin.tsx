@@ -1,8 +1,8 @@
-import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import { Lock, Users, Eye, Plus, Package, ArrowLeft, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { ArrowLeft, Eye, Lock, Package, Plus, Trash2, Users } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { formatPrice, convertToUSD, ADMIN_PASSWORD } from "@/lib/constants";
+import { convertToUSD, ADMIN_PASSWORD, EXCHANGE_RATE, formatPrice } from "@/lib/constants";
 import { useProducts } from "@/hooks/useProducts";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -16,15 +16,33 @@ const Admin = () => {
   const { data: products = [] } = useProducts();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const { urlPassword } = useParams<{ urlPassword: string }>();
 
-  // New product form
+  const [customCategories, setCustomCategories] = useState<string[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string>("ИБП");
+  const [addPosition, setAddPosition] = useState<"begin" | "end">("end");
+
   const [newProduct, setNewProduct] = useState({
     name: "",
-    category: "ИБП",
-    price: "",
     image: "",
-    brand: "",
+    priceSum: "",
+    priceUsd: "",
   });
+
+  const [showAddCategoryInput, setShowAddCategoryInput] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState("");
+
+  type PriceEdit = { sum: string; usd: string };
+  const [priceEdits, setPriceEdits] = useState<Record<number, PriceEdit>>({});
+
+  const baseCategories = useMemo(() => {
+    return [...new Set(products.map((p) => p.category))];
+  }, [products]);
+
+  const categories = useMemo(() => {
+    const merged = [...baseCategories, ...customCategories.filter((c) => !baseCategories.includes(c))];
+    return merged;
+  }, [baseCategories, customCategories]);
 
   useEffect(() => {
     if (!authenticated) return;
@@ -50,6 +68,39 @@ const Admin = () => {
     return () => clearInterval(interval);
   }, [authenticated]);
 
+  useEffect(() => {
+    const urlPassword = new URLSearchParams(window.location.search).get("password");
+    if (urlPassword === ADMIN_PASSWORD) {
+      setAuthenticated(true);
+      return;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (urlPassword === ADMIN_PASSWORD) setAuthenticated(true);
+  }, [urlPassword]);
+
+  useEffect(() => {
+    if (!authenticated) return;
+    if (categories.length > 0 && !categories.includes(selectedCategory)) {
+      setSelectedCategory(categories[0]);
+    }
+  }, [authenticated, categories, selectedCategory]);
+
+  useEffect(() => {
+    if (!authenticated) return;
+
+    // Initialize price edit fields based on current products.
+    const next: Record<number, PriceEdit> = {};
+    for (const p of products) {
+      next[p.id] = {
+        sum: String(p.price),
+        usd: String(convertToUSD(p.price)),
+      };
+    }
+    setPriceEdits(next);
+  }, [authenticated, products]);
+
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     if (password === ADMIN_PASSWORD) {
@@ -59,14 +110,49 @@ const Admin = () => {
     }
   };
 
+  const usdFromSum = (sum: number) => {
+    if (!Number.isFinite(sum)) return 0;
+    return Math.round(sum / EXCHANGE_RATE);
+  };
+
+  const sumFromUsd = (usd: number) => {
+    if (!Number.isFinite(usd)) return 0;
+    return Math.round(usd * EXCHANGE_RATE);
+  };
+
   const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newProduct.name || !newProduct.price || !newProduct.image) {
+    if (!newProduct.name || !newProduct.priceSum || !newProduct.image || !selectedCategory) {
       toast.error("Заполните все поля!");
       return;
     }
 
     try {
+      const priceSum = parseInt(newProduct.priceSum, 10);
+      if (!Number.isFinite(priceSum)) {
+        toast.error("Цена (сум) должна быть числом");
+        return;
+      }
+
+      // Use created_at to simulate "add to beginning/end" inside a category.
+      // Earlier created_at appears earlier when sorting by created_at ascending.
+      const catProducts = products.filter((p) => p.category === selectedCategory);
+      const timestamps = catProducts
+        .map((p) => (p as any).created_at as string | undefined)
+        .filter(Boolean)
+        .map((t) => new Date(t as string).getTime())
+        .filter((t) => Number.isFinite(t));
+
+      const createdAt = (() => {
+        if (timestamps.length === 0) return new Date();
+        const min = Math.min(...timestamps);
+        const max = Math.max(...timestamps);
+        const deltaMs = 1; // minimal so it stays strictly before/after
+        return addPosition === "begin"
+          ? new Date(min - deltaMs)
+          : new Date(max + deltaMs);
+      })();
+
       const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-products`, {
         method: "POST",
         headers: {
@@ -78,11 +164,12 @@ const Admin = () => {
           password: ADMIN_PASSWORD,
           product: {
             name: newProduct.name,
-            category: newProduct.category,
-            price: parseInt(newProduct.price),
+            category: selectedCategory,
+            price: priceSum,
             image: newProduct.image,
-            brand: newProduct.brand || "Generic",
+            brand: "Generic",
             in_stock: true,
+            created_at: createdAt.toISOString(),
           },
         }),
       });
@@ -90,7 +177,7 @@ const Admin = () => {
       if (!resp.ok) throw new Error("Failed to add product");
 
       toast.success("Товар добавлен!");
-      setNewProduct({ name: "", category: "ИБП", price: "", image: "", brand: "" });
+      setNewProduct({ name: "", image: "", priceSum: "", priceUsd: "" });
       queryClient.invalidateQueries({ queryKey: ["products"] });
       setTab("products");
     } catch {
@@ -117,7 +204,39 @@ const Admin = () => {
     }
   };
 
-  const categories = [...new Set(products.map((p) => p.category))];
+  const handleUpdatePrice = async (id: number) => {
+    const edit = priceEdits[id];
+    if (!edit) return;
+
+    const sum = parseInt(edit.sum, 10);
+    if (!Number.isFinite(sum)) {
+      toast.error("Цена (сум) должна быть числом");
+      return;
+    }
+
+    try {
+      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-products`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({
+          action: "update",
+          password: ADMIN_PASSWORD,
+          productId: id,
+          price: sum,
+        }),
+      });
+
+      if (!resp.ok) throw new Error("Failed to update price");
+
+      toast.success("Цена обновлена");
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+    } catch {
+      toast.error("Ошибка обновления цены");
+    }
+  };
 
   if (!authenticated) {
     return (
@@ -174,7 +293,7 @@ const Admin = () => {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
           {[
             { icon: Eye, label: "Онлайн сейчас", value: onlineCount, color: "text-green-400" },
-            { icon: Users, label: "Всего посетителей", value: totalVisitors, color: "text-primary" },
+            { icon: Users, label: "Всего устройств", value: totalVisitors, color: "text-primary" },
             { icon: Package, label: "Всего товаров", value: products.length, color: "text-accent" },
             { icon: Package, label: "Категорий", value: categories.length, color: "text-yellow-400" },
           ].map((s) => (
@@ -249,7 +368,9 @@ const Admin = () => {
                   <tr className="border-b border-border">
                     <th className="text-left p-4 font-semibold">Товар</th>
                     <th className="text-left p-4 font-semibold hidden sm:table-cell">Категория</th>
-                    <th className="text-right p-4 font-semibold">Цена</th>
+                    <th className="text-right p-4 font-semibold hidden sm:table-cell">Цена (сум)</th>
+                    <th className="text-right p-4 font-semibold hidden md:table-cell">Цена ($)</th>
+                    <th className="text-right p-4 font-semibold w-28">Обновить</th>
                     <th className="text-right p-4 font-semibold w-12"></th>
                   </tr>
                 </thead>
@@ -266,7 +387,48 @@ const Admin = () => {
                         </div>
                       </td>
                       <td className="p-4 hidden sm:table-cell text-muted-foreground">{p.category}</td>
-                      <td className="p-4 text-right font-bold whitespace-nowrap">${convertToUSD(p.price)}</td>
+                      <td className="p-4 hidden sm:table-cell">
+                        <input
+                          type="number"
+                          className="w-32 bg-muted rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+                          value={priceEdits[p.id]?.sum ?? ""}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            const sum = val === "" ? "" : val;
+                            setPriceEdits((prev) => {
+                              const next = { ...prev };
+                              const usd = val === "" ? "" : String(usdFromSum(parseInt(val, 10)));
+                              next[p.id] = { sum, usd };
+                              return next;
+                            });
+                          }}
+                        />
+                      </td>
+                      <td className="p-4 hidden md:table-cell">
+                        <input
+                          type="number"
+                          className="w-24 bg-muted rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+                          value={priceEdits[p.id]?.usd ?? ""}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setPriceEdits((prev) => {
+                              const next = { ...prev };
+                              const usd = val === "" ? "" : val;
+                              const sum = val === "" ? "" : String(sumFromUsd(parseInt(val, 10)));
+                              next[p.id] = { sum, usd };
+                              return next;
+                            });
+                          }}
+                        />
+                      </td>
+                      <td className="p-4 text-right">
+                        <button
+                          onClick={() => handleUpdatePrice(p.id)}
+                          className="bg-primary text-primary-foreground rounded-xl px-3 py-2 font-bold text-sm hover:scale-[1.02] transition-transform"
+                        >
+                          Обновить
+                        </button>
+                      </td>
                       <td className="p-4 text-right">
                         <button
                           onClick={() => handleDeleteProduct(p.id)}
@@ -284,11 +446,97 @@ const Admin = () => {
         )}
 
         {tab === "add" && (
-          <form onSubmit={handleAddProduct} className="glass rounded-xl p-6 max-w-lg space-y-4">
-            <h3 className="font-bold flex items-center gap-2"><Plus className="w-5 h-5 text-primary" /> Добавить товар</h3>
+          <form onSubmit={handleAddProduct} className="glass rounded-xl p-6 max-w-2xl space-y-5">
+            <h3 className="font-bold flex items-center gap-2">
+              <Plus className="w-5 h-5 text-primary" /> Добавить товар
+            </h3>
+
+            {/* Dynamic "tabs" (categories) */}
+            <div className="space-y-2">
+              <div className="text-xs font-medium text-muted-foreground">В какую вкладку добавить товар</div>
+              <div className="flex flex-wrap gap-2">
+                {categories.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setSelectedCategory(c)}
+                    className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                      selectedCategory === c ? "bg-primary text-primary-foreground" : "glass hover:border-primary/60"
+                    }`}
+                  >
+                    {c}
+                  </button>
+                ))}
+
+                <button
+                  type="button"
+                  onClick={() => setShowAddCategoryInput((v) => !v)}
+                  className="px-4 py-2 rounded-full text-sm font-medium glass hover:border-primary/60 flex items-center gap-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  + вкладка
+                </button>
+              </div>
+
+              {showAddCategoryInput && (
+                <div className="flex gap-2 items-center">
+                  <input
+                    value={newCategoryName}
+                    onChange={(e) => setNewCategoryName(e.target.value)}
+                    placeholder="Название вкладки"
+                    className="flex-1 bg-muted rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const name = newCategoryName.trim();
+                      if (!name) {
+                        toast.error("Введите название вкладки");
+                        return;
+                      }
+                      if (!categories.includes(name)) {
+                        setCustomCategories((prev) => [...prev, name]);
+                      }
+                      setSelectedCategory(name);
+                      setNewCategoryName("");
+                      setShowAddCategoryInput(false);
+                      toast.success("Вкладка добавлена");
+                    }}
+                    className="bg-primary text-primary-foreground rounded-xl px-4 py-3 font-bold text-sm hover:scale-[1.02] transition-transform"
+                  >
+                    Добавить
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Add beginning / end */}
+            <div className="space-y-2">
+              <div className="text-xs font-medium text-muted-foreground">Позиция внутри вкладки</div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setAddPosition("begin")}
+                  className={`flex-1 px-4 py-3 rounded-xl text-sm font-bold transition-all ${
+                    addPosition === "begin" ? "bg-primary text-primary-foreground" : "glass hover:border-primary/60"
+                  }`}
+                >
+                  В начало
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAddPosition("end")}
+                  className={`flex-1 px-4 py-3 rounded-xl text-sm font-bold transition-all ${
+                    addPosition === "end" ? "bg-primary text-primary-foreground" : "glass hover:border-primary/60"
+                  }`}
+                >
+                  В конец
+                </button>
+              </div>
+            </div>
 
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Фото (URL)</label>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Фото товара (ссылка)</label>
               <input
                 value={newProduct.image}
                 onChange={(e) => setNewProduct({ ...newProduct, image: e.target.value })}
@@ -307,43 +555,48 @@ const Admin = () => {
               />
             </div>
 
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Цена (сум)</label>
-              <input
-                type="number"
-                value={newProduct.price}
-                onChange={(e) => setNewProduct({ ...newProduct, price: e.target.value })}
-                placeholder="1000000"
-                className="w-full bg-muted rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary"
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Цена (сум)</label>
+                <input
+                  type="number"
+                  value={newProduct.priceSum}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setNewProduct((prev) => {
+                      const sum = val;
+                      const usd = val === "" ? "" : String(usdFromSum(parseInt(val, 10)));
+                      return { ...prev, priceSum: sum, priceUsd: usd };
+                    });
+                  }}
+                  placeholder="1000000"
+                  className="w-full bg-muted rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Цена (доллар)</label>
+                <input
+                  type="number"
+                  value={newProduct.priceUsd}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setNewProduct((prev) => {
+                      const usd = val;
+                      const sum = val === "" ? "" : String(sumFromUsd(parseInt(val, 10)));
+                      return { ...prev, priceUsd: usd, priceSum: sum };
+                    });
+                  }}
+                  placeholder="100"
+                  className="w-full bg-muted rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
             </div>
 
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Категория</label>
-              <select
-                value={newProduct.category}
-                onChange={(e) => setNewProduct({ ...newProduct, category: e.target.value })}
-                className="w-full bg-muted rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary"
-              >
-                {["ИБП", "Мониторы", "Сеть", "Комплектующие", "Моноблоки", "Аксессуары", "Колонки", "Кронштейны", "Deco", "Wi-Fi роутеры"].map((c) => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
+            <div className="pt-1">
+              <button className="w-full bg-primary text-primary-foreground rounded-xl py-3 font-bold text-sm hover:scale-[1.02] transition-transform">
+                Установить
+              </button>
             </div>
-
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Бренд</label>
-              <input
-                value={newProduct.brand}
-                onChange={(e) => setNewProduct({ ...newProduct, brand: e.target.value })}
-                placeholder="Бренд"
-                className="w-full bg-muted rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary"
-              />
-            </div>
-
-            <button className="w-full bg-primary text-primary-foreground rounded-xl py-3 font-bold text-sm hover:scale-[1.02] transition-transform">
-              Добавить товар
-            </button>
           </form>
         )}
       </div>

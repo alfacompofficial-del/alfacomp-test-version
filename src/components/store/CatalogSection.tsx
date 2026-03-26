@@ -11,6 +11,7 @@ interface CatalogSectionProps {
 
 const CatalogSection = ({ products, onAddToCart }: CatalogSectionProps) => {
   const [filter, setFilter] = useState("all");
+  const [showAll, setShowAll] = useState(false);
 
   const categories = useMemo(() => {
     const cats = [...new Set(products.map((p) => p.category))];
@@ -20,6 +21,8 @@ const CatalogSection = ({ products, onAddToCart }: CatalogSectionProps) => {
   const filtered = useMemo(() => {
     return filter === "all" ? products : products.filter((p) => p.category === filter);
   }, [products, filter]);
+
+  const displayed = showAll ? filtered : filtered.slice(0, 12);
 
   return (
     <section id="catalog" className="py-20">
@@ -41,7 +44,7 @@ const CatalogSection = ({ products, onAddToCart }: CatalogSectionProps) => {
             {categories.map((cat) => (
               <button
                 key={cat}
-                onClick={() => setFilter(cat)}
+                onClick={() => { setFilter(cat); setShowAll(false); }}
                 className={`px-4 py-2 rounded-full text-xs font-medium transition-all ${
                   filter === cat
                     ? "bg-primary text-primary-foreground"
@@ -67,10 +70,21 @@ const CatalogSection = ({ products, onAddToCart }: CatalogSectionProps) => {
 
         {/* Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {filtered.map((product) => (
+          {displayed.map((product) => (
             <ProductCard key={product.id} product={product} onAddToCart={onAddToCart} />
           ))}
         </div>
+
+        {filtered.length > 12 && !showAll && (
+          <div className="flex justify-center mt-10">
+            <button
+              onClick={() => setShowAll(true)}
+              className="glass glass-hover rounded-full px-8 py-3 font-semibold text-sm hover:border-primary transition-all"
+            >
+              Показать ещё ({filtered.length - 12})
+            </button>
+          </div>
+        )}
       </div>
     </section>
   );

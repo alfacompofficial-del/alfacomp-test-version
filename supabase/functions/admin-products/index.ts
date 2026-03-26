@@ -6,13 +6,13 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const ADMIN_PASSWORD = "Bilol2013/";
+const ADMIN_PASSWORD = "Xojakbar777";
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { action, password, product, productId } = await req.json();
+    const { action, password, product, productId, price } = await req.json();
 
     if (password !== ADMIN_PASSWORD) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -36,6 +36,25 @@ serve(async (req) => {
 
     if (action === "delete" && productId) {
       const { error } = await supabase.from("products").delete().eq("id", productId);
+      if (error) throw error;
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (action === "update" && productId !== undefined && price !== undefined) {
+      const parsedPrice = typeof price === "number" ? price : parseInt(String(price), 10);
+      if (!Number.isFinite(parsedPrice)) {
+        return new Response(JSON.stringify({ error: "Invalid price" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const { error } = await supabase
+        .from("products")
+        .update({ price: parsedPrice })
+        .eq("id", productId);
+
       if (error) throw error;
       return new Response(JSON.stringify({ success: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },

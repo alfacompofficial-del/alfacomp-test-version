@@ -9,6 +9,7 @@ export interface Product {
   image: string;
   brand: string;
   in_stock: boolean;
+  created_at?: string;
 }
 
 export const useProducts = () => {
@@ -18,9 +19,12 @@ export const useProducts = () => {
       const { data, error } = await supabase
         .from("products")
         .select("*")
-        .order("id");
+        .order("created_at", { ascending: true });
       if (error) throw error;
       return data as Product[];
     },
+    // Keeps catalog price updates "automatic" after admin edits.
+    refetchInterval: 15000,
+    refetchIntervalInBackground: true,
   });
 };

@@ -7,7 +7,7 @@ export const CONTACTS = {
   ADDRESS: "Ташкент, Узбекистан",
 };
 
-export const ADMIN_PASSWORD = "Bilol2013/";
+export const ADMIN_PASSWORD = "Xojakbar777";
 
 export const CATEGORY_ICONS: Record<string, string> = {
   "ИБП": "⚡",
@@ -17,9 +17,6 @@ export const CATEGORY_ICONS: Record<string, string> = {
   "Моноблоки": "💻",
   "Аксессуары": "🎧",
   "Колонки": "🔊",
-  "Кронштейны": "🖥️",
-  "Deco": "🌐",
-  "Wi-Fi роутеры": "📶",
 };
 
 export const FAQ_DATA = [

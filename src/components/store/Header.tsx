@@ -31,9 +31,9 @@ const Header = ({ cartCount, onCartClick }: HeaderProps) => {
       }`}
     >
       <div className="container flex items-center justify-between">
-        <button onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })} className="text-2xl font-extrabold gradient-text tracking-tight">
+        <Link to="/" className="text-2xl font-extrabold gradient-text tracking-tight">
           AlfaComp
-        </button>
+        </Link>
 
         {/* Desktop nav */}
         <nav className="hidden md:flex items-center gap-8">
