@@ -174,14 +174,17 @@ const Admin = () => {
         }),
       });
 
-      if (!resp.ok) throw new Error("Failed to add product");
+      if (!resp.ok) {
+        const errorData = await resp.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to add product");
+      }
 
       toast.success("Товар добавлен!");
       setNewProduct({ name: "", image: "", priceSum: "", priceUsd: "" });
       queryClient.invalidateQueries({ queryKey: ["products"] });
       setTab("products");
-    } catch {
-      toast.error("Ошибка при добавлении товара");
+    } catch (err: any) {
+      toast.error(`Ошибка при добавлении товара: ${err.message}`);
     }
   };
 
@@ -196,11 +199,14 @@ const Admin = () => {
         body: JSON.stringify({ action: "delete", password: ADMIN_PASSWORD, productId: id }),
       });
 
-      if (!resp.ok) throw new Error("Failed");
+      if (!resp.ok) {
+        const errorData = await resp.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to delete product");
+      }
       toast.success("Товар удалён");
       queryClient.invalidateQueries({ queryKey: ["products"] });
-    } catch {
-      toast.error("Ошибка удаления");
+    } catch (err: any) {
+      toast.error(`Ошибка удаления: ${err.message}`);
     }
   };
 
@@ -229,12 +235,15 @@ const Admin = () => {
         }),
       });
 
-      if (!resp.ok) throw new Error("Failed to update price");
+      if (!resp.ok) {
+        const errorData = await resp.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to update price");
+      }
 
       toast.success("Цена обновлена");
       queryClient.invalidateQueries({ queryKey: ["products"] });
-    } catch {
-      toast.error("Ошибка обновления цены");
+    } catch (err: any) {
+      toast.error(`Ошибка обновления цены: ${err.message}`);
     }
   };
 
